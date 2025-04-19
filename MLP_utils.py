@@ -1,7 +1,8 @@
 from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder, normalize
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
+import torch
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -12,17 +13,48 @@ import math
 from DEFINE import CAT_DATA_STRING
 
 
-
-def catPlot(df: pd.DataFrame, catColumn: str, ax : plt.axes):
-    """
-    Function to create a count plot with seaborn
-
-    @param df: a pandas dataframe
-    @param catColumn: string corresponding to the name of the column with the categorical column
-    @param ax, plt.axes to put the graph in a subplot
-    """
+def lossPlot(trainLossData: list[float], predictLossdata: list[float]) -> None:
+    plt.figure(figsize=(10, 6))
     sns.set_style("whitegrid")
-    sns.countplot(data=df, x=catColumn, hue=catColumn, ax=ax)
+    
+    # dataframe to handle legend
+    lossDf = pd.DataFrame({
+        'Epoch': range(1, len(trainLossData) + 1),
+        'Train Loss': trainLossData,
+        'Validation Loss': predictLossdata
+    })
+    
+    sns.lineplot(x='Epoch', y='Train Loss', data=lossDf, linewidth=2.5, 
+                 marker='o', markersize=5, label='Train Loss', color='#1E88E5')
+    sns.lineplot(x='Epoch', y='Validation Loss', data=lossDf, linewidth=2.5, 
+                 marker='s', markersize=5, label='Validation Loss', color='#FFC107')
+    
+    plt.title("Loss evolution accross training", fontsize=16, fontweight='bold')
+    plt.xlabel("Epochs", fontsize=12)
+    plt.ylabel("Loss value", fontsize=12)
+
+    
+    # Améliorer la légende
+    plt.legend(title='Legend', fontsize=10, title_fontsize=12, 
+               frameon=True, facecolor='white', edgecolor='gray')
+    
+
+    # minimum annotation
+    minTrainIdx = trainLossData.index(min(trainLossData))
+    minPredictIdx = predictLossdata.index(min(predictLossdata))
+    
+    plt.annotate(f'Min: {min(trainLossData):.4f}', 
+                xy=(minTrainIdx+1, min(trainLossData)),
+                xytext=(10, -20), textcoords='offset points',
+                arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=.2'))
+    
+    plt.annotate(f'Min: {min(predictLossdata):.4f}', 
+                xy=(minPredictIdx+1, min(predictLossdata)),
+                xytext=(10, 20), textcoords='offset points',
+                arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=.2'))
+    
+    plt.tight_layout()
+    plt.show()
 
 
 def numDataDistribution(data : pd.DataFrame, nbPlot : int = 10, nbPlotPerRow : int = 5) -> None:
@@ -121,9 +153,10 @@ def prepareDataForMlp(df: pd.DataFrame):
     categorical_cols = df.select_dtypes(include=['object', 'category']).columns
     numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns
     numerical_cols = [col for col in numerical_cols if col != "Legendary Status"]  # Exclure la variable cible
-
-    # for numCol in numerical_cols:
-    #     df[numCol] = normalize(df[numCol].to_frame())
+    numerical_cols_to_normalise = [col for col in numerical_cols if "Evolution" not in col]
+    # Normalize numerical columns using StandardScaler
+    scaler = StandardScaler()
+    df[numerical_cols_to_normalise] = scaler.fit_transform(df[numerical_cols_to_normalise])
 
     # Create a processor to transform cat values into numeric vector
     preprocessor = ColumnTransformer(
@@ -145,7 +178,10 @@ def prepareDataForMlp(df: pd.DataFrame):
     # SMOTE to get the same amount of legendary and not legendary pokemon in train dataset (test does not matter)
     smote = SMOTE(random_state=42)
     X_train_smote, y_train_smote = smote.fit_resample(X_train_processed, y_train)
-    return X_train_smote, y_train_smote, X_test_processed, y_test, preprocessor
+    y_train_tensor = torch.FloatTensor(y_train_smote).view(-1, 1)
+    y_test_tensor = torch.FloatTensor(y_test.values).view(-1, 1)
+    
+    return X_train_smote, y_train_tensor, X_test_processed, y_test_tensor, preprocessor
 
 
 def encodedDataToDataFrame(preprocessor : ColumnTransformer, data):
