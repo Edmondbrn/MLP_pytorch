@@ -2,6 +2,8 @@ from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_curve, precision_recall_curve
+
 import torch
 import pandas as pd
 import numpy as np
@@ -19,42 +21,94 @@ def lossPlot(trainLossData: list[float], predictLossdata: list[float]) -> None:
     
     # dataframe to handle legend
     lossDf = pd.DataFrame({
-        'Epoch': range(1, len(trainLossData) + 1),
-        'Train Loss': trainLossData,
-        'Validation Loss': predictLossdata
+        "Epoch": range(1, len(trainLossData) + 1),
+        "Train Loss": trainLossData,
+        "Validation Loss": predictLossdata
     })
     
-    sns.lineplot(x='Epoch', y='Train Loss', data=lossDf, linewidth=2.5, 
-                 marker='o', markersize=5, label='Train Loss', color='#1E88E5')
-    sns.lineplot(x='Epoch', y='Validation Loss', data=lossDf, linewidth=2.5, 
-                 marker='s', markersize=5, label='Validation Loss', color='#FFC107')
+    sns.lineplot(x="Epoch", y="Train Loss", data=lossDf, linewidth=2.5, 
+                 marker="o", markersize=5, label="Train Loss", color="#1E88E5")
+    sns.lineplot(x="Epoch", y="Validation Loss", data=lossDf, linewidth=2.5, 
+                 marker="s", markersize=5, label="Validation Loss", color="#FFC107")
     
-    plt.title("Loss evolution accross training", fontsize=16, fontweight='bold')
+    plt.title("Loss evolution accross training", fontsize=16, fontweight="bold")
     plt.xlabel("Epochs", fontsize=12)
     plt.ylabel("Loss value", fontsize=12)
 
     
     # Améliorer la légende
-    plt.legend(title='Legend', fontsize=10, title_fontsize=12, 
-               frameon=True, facecolor='white', edgecolor='gray')
+    plt.legend(title="Legend", fontsize=10, title_fontsize=12, 
+               frameon=True, facecolor="white", edgecolor="gray")
     
 
     # minimum annotation
     minTrainIdx = trainLossData.index(min(trainLossData))
     minPredictIdx = predictLossdata.index(min(predictLossdata))
     
-    plt.annotate(f'Min: {min(trainLossData):.4f}', 
+    plt.annotate(f"Min: {min(trainLossData):.4f}", 
                 xy=(minTrainIdx+1, min(trainLossData)),
-                xytext=(10, -20), textcoords='offset points',
-                arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=.2'))
+                xytext=(10, -20), textcoords="offset points",
+                arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=.2"))
     
-    plt.annotate(f'Min: {min(predictLossdata):.4f}', 
+    plt.annotate(f"Min: {min(predictLossdata):.4f}", 
                 xy=(minPredictIdx+1, min(predictLossdata)),
-                xytext=(10, 20), textcoords='offset points',
-                arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=.2'))
+                xytext=(10, 20), textcoords="offset points",
+                arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=.2"))
     
     plt.tight_layout()
     plt.show()
+
+
+def rocCurve(yTrue, yPred):
+    """
+    Function to plot the ROC curve of the MLP output
+    It will plot the false positive rate against the true positive rate
+    """
+    fpr, tpr, thresholds = roc_curve(yTrue.numpy(), yPred.numpy())
+    
+    df = pd.DataFrame({
+        "False positive rate": fpr,
+        "True positive rate": tpr,
+        "thresholds": thresholds
+    })
+
+    plt.figure(figsize=(10, 5))
+    sns.set_style("whitegrid")
+    plt.plot(fpr, tpr)
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve")
+    plt.show()
+    return df
+
+
+
+def precisionRecallCurve(yTrue, yPred):
+    """
+    Function to plot the precision against the recall to determine the best thresholds
+    """
+    precision, recall, thresholds = precision_recall_curve(yTrue.numpy(), yPred.numpy())
+    precision =  precision[:-1]
+    recall =  recall[:-1]
+    
+    df = pd.DataFrame({
+        "Precision": precision,
+        "Recall": recall,
+        "thresholds": thresholds
+    })
+    
+    plt.figure(figsize=(10, 5))
+    sns.set_style("whitegrid")
+    sns.lineplot(data = df, x = "Recall", y = "Precision", marker = "o")
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title("Precision-Recall Curve")
+    plt.show()
+    return df
+
+
+
+
 
 
 def numDataDistribution(data : pd.DataFrame, nbPlot : int = 10, nbPlotPerRow : int = 5) -> None:
@@ -150,8 +204,8 @@ def prepareDataForMlp(df: pd.DataFrame):
     Function to convert categorical columns into numeric ones and apply SMOTE processing to normalise legendary and non legendary pokemon
     """
     # Identify num and cat columns
-    categorical_cols = df.select_dtypes(include=['object', 'category']).columns
-    numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns
+    categorical_cols = df.select_dtypes(include=["object", "category"]).columns
+    numerical_cols = df.select_dtypes(include=["int64", "float64"]).columns
     numerical_cols = [col for col in numerical_cols if col != "Legendary Status"]  # Exclure la variable cible
     numerical_cols_to_normalise = [col for col in numerical_cols if "Evolution" not in col]
     # Normalize numerical columns using StandardScaler
@@ -161,9 +215,9 @@ def prepareDataForMlp(df: pd.DataFrame):
     # Create a processor to transform cat values into numeric vector
     preprocessor = ColumnTransformer(
         transformers=[
-            ('num', 'passthrough', numerical_cols), # ignore numerical data
-            ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_cols) # transform cat value into a numerica vector
-        ], remainder='drop')
+            ("num", "passthrough", numerical_cols), # ignore numerical data
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols) # transform cat value into a numerica vector
+        ], remainder="drop")
     
 
     # Divide data and the target
@@ -184,6 +238,39 @@ def prepareDataForMlp(df: pd.DataFrame):
     return X_train_smote, y_train_tensor, X_test_processed, y_test_tensor, preprocessor
 
 
+def getPerformanceStatistics(yTrue : np.ndarray | pd.Series, yPred : np.ndarray) -> dict[str : float]:
+    """
+    Function to compute important statistic after MLP prediction
+    
+    @return: a dictionnary with accuracy, precision, recall, f1 and confusion matrix
+    """
+    accuracy = accuracy_score(yTrue, yPred) # number of correct prediction
+    precision = precision_score(yTrue, yPred) # true positive ratio in prediction class
+    recall = recall_score(yTrue, yPred) # proportion of legendary pokemon correctly identified
+    f1 = f1_score(yTrue, yPred) # mean between precision and recal
+    confusion = confusion_matrix(yTrue, yPred)
+    return {
+        "accuracy" : accuracy,
+        "precision" : precision,
+        "recall" : recall,
+        "f1" : f1,
+        "confusion" : confusion
+    }
+
+def getBestThresholdsForF1(yTest, yPred) -> float:
+    """
+    Function to get the best thresholds to optimise F1 value (mean between recall and precision)
+    """
+    thresholds = np.arange(0.1, 0.9, 0.05)
+    f1_scores = []
+
+    for threshold in thresholds:
+        y_pred_t = (yPred >= threshold).float().numpy()
+        f1_scores.append(f1_score(yTest.numpy(), y_pred_t))
+    return thresholds[np.argmax(f1_scores)]
+
+
+
 def encodedDataToDataFrame(preprocessor : ColumnTransformer, data):
     """
     Function to extract compressed data columns after an ColumnTransformer to get a dataFrame
@@ -194,9 +281,129 @@ def encodedDataToDataFrame(preprocessor : ColumnTransformer, data):
     return data_df
 
 
-# Pour conserver le préprocesseur pour une utilisation ultérieure (important!)
-# from sklearn.pipeline import Pipeline
-# pipeline = Pipeline([
-#     ('preprocessor', preprocessor),
-#     ('model', your_model)  # Votre modèle MLP ici
-# ])
+def formatRawCvOutput(dictFoldResults : dict):
+    """
+    Function to get all the important information about each fold after a cross validation
+
+    @param dictFoldResults: dictionnary from MlpPokemon.crossValidationPredict
+    """
+    for fold in dictFoldResults.keys():
+        output = dictFoldResults[fold]
+        print(f"Fold number {fold}:\nAccuracy: {output["accuracy"]}\n Precision: {output["precision"]}\n Recall: {output["recall"]}\n F1: {output["f1"]}\n Confusion Matrix: {output["confusion"]}\n Final test loss: {output["testLoss"][-1]}")
+
+
+def analyseCvOutput(foldResults : dict) -> pd.DataFrame:
+    """
+    Method to compute all important performance data after a cross validation
+    
+    @param foldResults: dictionnary from MlpPokemon.crossValidationPredict
+    """
+    metrics = ["accuracy", "precision", "recall", "f1"]
+    resultDf = pd.DataFrame(columns=metrics)
+    
+    for fold, results in foldResults.items(): # store metrics for each fols in a dataFrame
+        resultDf.loc[fold] = [results[metric] for metric in metrics]
+    
+    meanScores = resultDf.mean()
+    stdScores = resultDf.std()
+    
+    print("=== Cross validation results===")
+    for metric in metrics:
+        print(f"{metric.capitalize()}: {meanScores[metric]:.4f} ± {stdScores[metric]:.4f}")
+    
+    return resultDf
+
+
+def plotCvLearningCurves(foldResults : dict):
+    """
+    Function to plot the loss curves for each fold
+
+    @param foldResults: dictionnary from MlpPokemon.crossValidationPredict
+    """
+    plt.figure(figsize=(12, 8))
+    
+    plt.subplot(1, 2, 1)
+    sns.set_style("whitegrid")
+    for fold, results in foldResults.items():
+        sns.lineplot(results["trainLoss"], label=fold)
+    plt.title("Train loss for each fold")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
+    
+    plt.subplot(1, 2, 2)
+    for fold, results in foldResults.items():
+        plt.plot(results["testLoss"], label=fold)
+    plt.title("Test loss for each fold")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show()
+
+
+def plotConfusionMatrices(foldResults):
+    """
+    Function to plot the confusion matrix for each fold
+
+    @param foldResults: dictionnary from MlpPokemon.crossValidationPredict
+    """
+    nFolds = len(foldResults)
+    fig, axes = plt.subplots(1, nFolds, figsize=(5*nFolds, 4))
+    
+    for i, (fold, results) in enumerate(foldResults.items()):
+        ax : plt.axes = axes[i] if nFolds > 1 else axes
+        sns.heatmap(results["confusion"], annot=True, fmt="d", cmap="Blues", ax=ax)
+        ax.set_title(f"Matrice de confusion - {fold}")
+        ax.set_xlabel("Prédiction")
+        ax.set_ylabel("Réalité")
+        ax.set_xticklabels(["Non-Légendaire", "Légendaire"])
+        ax.set_yticklabels(["Non-Légendaire", "Légendaire"])
+    
+    plt.tight_layout()
+    plt.show()
+
+
+def plotMetricsComparison(metricsDf : pd.DataFrame) -> None:
+    """
+    Function to plot the metrics for each folds
+
+    @param metricsDf, dataframe from analyseCvOutput
+    """
+    plt.figure(figsize=(10, 6))
+    sns.set_style("whitegrid")
+    metricsDf.plot(kind="bar", figsize=(10, 6))
+    plt.title("Metric comparison")
+    plt.ylabel("Score")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+    
+
+def completeCvAnalysis(cvResults):
+    """
+    Global function to launch all the analysises after a cross validation
+
+    @param cvResults: dict from MlpPokemon.crossValidationPredict
+    """
+    # gloabl analysis
+    metrics_df = analyseCvOutput(cvResults)
+    
+    # loss curves
+    plotCvLearningCurves(cvResults)
+    
+    # Confusion matrix
+    plotConfusionMatrices(cvResults)
+    
+    # compare metrics between folds
+    plotMetricsComparison(metrics_df)
+    
+    # best thresholds analysis
+    thresholds = [float(cvResults[f]["bestThreshold"]) if "bestThreshold" in cvResults[f] else 0.5 
+                  for f in cvResults]
+    print(f"Seuil moyen: {np.mean(thresholds):.4f} ± {np.std(thresholds):.4f}")
+
+
+
+
