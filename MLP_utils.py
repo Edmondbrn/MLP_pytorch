@@ -15,49 +15,6 @@ import math
 from DEFINE import CAT_DATA_STRING
 
 
-def lossPlot(trainLossData: list[float], predictLossdata: list[float]) -> None:
-    plt.figure(figsize=(10, 6))
-    sns.set_style("whitegrid")
-    
-    # dataframe to handle legend
-    lossDf = pd.DataFrame({
-        "Epoch": range(1, len(trainLossData) + 1),
-        "Train Loss": trainLossData,
-        "Validation Loss": predictLossdata
-    })
-    
-    sns.lineplot(x="Epoch", y="Train Loss", data=lossDf, linewidth=2.5, 
-                 marker="o", markersize=5, label="Train Loss", color="#1E88E5")
-    sns.lineplot(x="Epoch", y="Validation Loss", data=lossDf, linewidth=2.5, 
-                 marker="s", markersize=5, label="Validation Loss", color="#FFC107")
-    
-    plt.title("Loss evolution accross training", fontsize=16, fontweight="bold")
-    plt.xlabel("Epochs", fontsize=12)
-    plt.ylabel("Loss value", fontsize=12)
-
-    
-    # Améliorer la légende
-    plt.legend(title="Legend", fontsize=10, title_fontsize=12, 
-               frameon=True, facecolor="white", edgecolor="gray")
-    
-
-    # minimum annotation
-    minTrainIdx = trainLossData.index(min(trainLossData))
-    minPredictIdx = predictLossdata.index(min(predictLossdata))
-    
-    plt.annotate(f"Min: {min(trainLossData):.4f}", 
-                xy=(minTrainIdx+1, min(trainLossData)),
-                xytext=(10, -20), textcoords="offset points",
-                arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=.2"))
-    
-    plt.annotate(f"Min: {min(predictLossdata):.4f}", 
-                xy=(minPredictIdx+1, min(predictLossdata)),
-                xytext=(10, 20), textcoords="offset points",
-                arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=.2"))
-    
-    plt.tight_layout()
-    plt.show()
-
 
 def rocCurve(yTrue, yPred):
     """
@@ -281,15 +238,14 @@ def encodedDataToDataFrame(preprocessor : ColumnTransformer, data):
     return data_df
 
 
-def formatRawCvOutput(dictFoldResults : dict):
+def displayParameters(bestParam : dict[str: object]) -> None:
     """
-    Function to get all the important information about each fold after a cross validation
+    Function to display the optimised parameter values
 
-    @param dictFoldResults: dictionnary from MlpPokemon.crossValidationPredict
+    @param bestParam: a dict from Mlp_model.optimizeHyperparameters linked to the 'bestParams' key. It is a dictionnary with string key (parameter name) and theire associated values
     """
-    for fold in dictFoldResults.keys():
-        output = dictFoldResults[fold]
-        print(f"Fold number {fold}:\nAccuracy: {output["accuracy"]}\n Precision: {output["precision"]}\n Recall: {output["recall"]}\n F1: {output["f1"]}\n Confusion Matrix: {output["confusion"]}\n Final test loss: {output["testLoss"][-1]}")
+    for paramName, paramValue in bestParam.items():
+        print(f"Parameter name: {paramName}, optimise value: {paramValue}")
 
 
 def analyseCvOutput(foldResults : dict) -> pd.DataFrame:
@@ -322,15 +278,16 @@ def plotCvLearningCurves(foldResults : dict):
     """
     plt.figure(figsize=(12, 8))
     
-    plt.subplot(1, 2, 1)
     sns.set_style("whitegrid")
+    plt.subplot(1, 2, 1)
     for fold, results in foldResults.items():
         sns.lineplot(results["trainLoss"], label=fold)
     plt.title("Train loss for each fold")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.legend()
-    
+
+    sns.set_style("whitegrid")
     plt.subplot(1, 2, 2)
     for fold, results in foldResults.items():
         plt.plot(results["testLoss"], label=fold)
@@ -355,11 +312,11 @@ def plotConfusionMatrices(foldResults):
     for i, (fold, results) in enumerate(foldResults.items()):
         ax : plt.axes = axes[i] if nFolds > 1 else axes
         sns.heatmap(results["confusion"], annot=True, fmt="d", cmap="Blues", ax=ax)
-        ax.set_title(f"Matrice de confusion - {fold}")
-        ax.set_xlabel("Prédiction")
-        ax.set_ylabel("Réalité")
-        ax.set_xticklabels(["Non-Légendaire", "Légendaire"])
-        ax.set_yticklabels(["Non-Légendaire", "Légendaire"])
+        ax.set_title(f"Confusion matrix- {fold}")
+        ax.set_xlabel("Prediction")
+        ax.set_ylabel("Reality")
+        ax.set_xticklabels(["Non-Legendary", "Legendary"])
+        ax.set_yticklabels(["Non-Legendary", "Legendary"])
     
     plt.tight_layout()
     plt.show()
@@ -389,6 +346,10 @@ def completeCvAnalysis(cvResults):
     """
     # gloabl analysis
     metrics_df = analyseCvOutput(cvResults)
+    # best thresholds analysis
+    thresholds = [float(cvResults[f]["bestThreshold"]) if "bestThreshold" in cvResults[f] else 0.5 
+                  for f in cvResults]
+    print(f"Average probability thresholds: {np.mean(thresholds):.4f} ± {np.std(thresholds):.4f}")
     
     # loss curves
     plotCvLearningCurves(cvResults)
@@ -399,10 +360,6 @@ def completeCvAnalysis(cvResults):
     # compare metrics between folds
     plotMetricsComparison(metrics_df)
     
-    # best thresholds analysis
-    thresholds = [float(cvResults[f]["bestThreshold"]) if "bestThreshold" in cvResults[f] else 0.5 
-                  for f in cvResults]
-    print(f"Seuil moyen: {np.mean(thresholds):.4f} ± {np.std(thresholds):.4f}")
 
 
 

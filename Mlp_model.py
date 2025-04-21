@@ -19,7 +19,7 @@ class MlpPokemon():
 
 
 
-    def __init__(self, X_train, y_train, X_test, y_test, preprocessor, numEpoch: int = 1000, batchSize : int = 32, hiddenDim : int = 16, lr : float = 0.001):
+    def __init__(self, X_train, y_train, X_test, y_test, preprocessor, numEpoch: int = 1000, batchSize : int = 32, hiddenDim : int = 16, lr : float = 0.001, nbHiddenLayer : int = 1):
         
         # network configuration
         self.numEpochs = numEpoch
@@ -27,6 +27,7 @@ class MlpPokemon():
         self.inputDim : int = X_train.shape[1]
         self.hiddenDim = hiddenDim
         self.outputDim = 1 # because we are performing a binary classification
+        self.nbHiddenLayers = nbHiddenLayer
         self.buildNetwork()
 
         # store original train data
@@ -48,36 +49,46 @@ class MlpPokemon():
 
     def buildNetwork(self):
         """
-        Method to build the basic neural network
+        Method to build the neural network
         """
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = nn.Sequential(
-            nn.Linear(self.inputDim, self.hiddenDim),
-            nn.ReLU(),
-            nn.Linear(self.hiddenDim, self.hiddenDim),
-            nn.ReLU(),
-            nn.Linear(self.hiddenDim, self.outputDim),
-            nn.Sigmoid()
-        ).to(device= device)
+        self.model = nn.Sequential()
+        self.model.add_module("input", nn.Linear(self.inputDim, self.hiddenDim))
+        self.model.add_module("actInput", nn.ReLU())
+        for i in range(self.nbHiddenLayers):
+            self.model.add_module(f"hidden{i}", nn.Linear(self.hiddenDim, self.hiddenDim))
+            self.model.add_module(f"act{i}", nn.ReLU())
+        self.model.add_module("output", nn.Linear(self.hiddenDim, self.outputDim))
+        self.model.add_module("outputAct", nn.Sigmoid())
 
-    # def getCombinedData(self):
-    #     """
-    #     Merge train and test data to perform a cross validation
+
+    def predict(self, X_transformed : np.ndarray = None, yTrue : np.ndarray = None) -> np.ndarray:
+        """
+        Function to predict the legendary status from a new data set. The features needs to be transformed by using the preprocessor saved with the model
+
+        @returns: total test loss for the prediction and the probability of the classificated data
+        """
+
+        if X_transformed is None and yTrue is None:
+            outputPrediction = self.__predictingSession(0.0) # use default test value (separated before training)
         
-    #     Returns:
-    #         Tensor tuple such as [X_tensor, y_tensor]
-    #     """
-    #     X_train_tensor = self.trainDataset.tensors[0]
-    #     y_train_tensor = self.trainDataset.tensors[1]
-    #     X_test_tensor = self.valDataset.tensors[0]
-    #     y_test_tensor = self.valDataset.tensors[1]
+        elif X_transformed is None or yTrue is None:
+            raise Exception("Both features and target need to be defined.")
         
-    #     # merging
-    #     X_combined = torch.cat([X_train_tensor, X_test_tensor], dim=0)
-    #     y_combined = torch.cat([y_train_tensor, y_test_tensor], dim=0)
-    
-    #     return X_combined, y_combined
+        else: # specific data from the user
+            originalValLoader = self.valLoader
+            valDataSet = TensorDataset(self.forward(X_transformed), self.forward(yTrue))
+            self.valLoader = DataLoader(valDataSet, batch_size =  self.batchSize, shuffle = True)
+            outputPrediction = self.__predictingSession(0.0)
+            self.valLoader = originalValLoader
+            
+
+        return outputPrediction
+
+
+
+
+
 
     def classicPredict(self):
         """
@@ -119,10 +130,6 @@ class MlpPokemon():
 
         kfold = KFold(n_splits=kFold, shuffle=True)
         foldResults = {}
-
-        # X_combined, y_combined = self.getCombinedData() # get X and y data in on structure
-        # X_np = X_combined.numpy() if not sp.issparse(X_combined) else X_combined # convert to numpy format
-
 
         for fold, (trainIdx, testIdx) in enumerate(kfold.split(self.X_train)): # perform cross validation only on train data (test data will be used for the final evaluation, after optimisation)
 
@@ -173,7 +180,7 @@ class MlpPokemon():
 
 
 
-    def __predictingSession(self, predictLoss : float) -> float:
+    def __predictingSession(self, predictLoss : float) -> tuple[float, list[float]]:
         """
         Method to compute loss on test dataset to optimise the model
         """
@@ -188,12 +195,13 @@ class MlpPokemon():
         return predictLoss / len(self.valLoader), allPred
     
 
-    def getPredictionClass(self, threshold : float = 0.5):
+    def getPredictionClass(self, threshold : float = 0.5, ypred = None):
         """
         Method to return the binary class prediction based on the threshold probability
         default: threshold = 0.5
         """
-        return (self.yPred >=threshold).float().numpy()
+        ypred = self.yPred if ypred is None else ypred
+        return (ypred>=threshold).float().numpy()
 
 
 
@@ -247,7 +255,8 @@ class MlpPokemon():
                 'hiddenDim': [8, 16, 32, 64],
                 'learningRate': [0.001, 0.01, 0.0001],
                 'batchSize': [16, 32, 64],
-                'numEpochs': [50, 100]
+                'numEpochs': [50, 100],
+                "nbHiddenLayers": [1, 2, 3, 5]
             }
         
         # generate all iteration paremeters
@@ -276,6 +285,7 @@ class MlpPokemon():
         }
     
     def __optimiseParameters(self, X_train, y_train, X_test, y_test, preprocessor, paramCombinaisons, cv, results):
+        bestF1 = 0
         for i, params in tqdm(enumerate(paramCombinaisons), total = len(paramCombinaisons), desc = f"Evaluation of {len(paramCombinaisons)} parameter combinaisons..."):
             optiModel = MlpPokemon(
                 X_train=X_train, 
@@ -285,7 +295,8 @@ class MlpPokemon():
                 preprocessor=preprocessor,
                 numEpoch=params['numEpochs'],
                 batchSize=params['batchSize'],
-                hiddenDim=params["hiddenDim"]
+                hiddenDim=params["hiddenDim"],
+                nbHiddenLayer=params["nbHiddenLayers"]
             )
             
             # perform cross validation for these parameters
