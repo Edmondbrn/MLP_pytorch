@@ -4,7 +4,6 @@ import torch.nn as nn
 from torch import optim
 from sklearn.model_selection import KFold
 from MLP_utils import getPerformanceStatistics, getBestThresholdsForF1
-from MLpModuleSkorch import MLPModule
 
 import numpy as np
 import scipy.sparse as sp
@@ -12,9 +11,6 @@ from tqdm import tqdm
 import itertools
 import joblib
 import os
-from skorch import NeuralNetBinaryClassifier
-from skorch.callbacks import EarlyStopping
-from sklearn.model_selection import GridSearchCV
 
 
 
@@ -326,118 +322,3 @@ class MlpPokemon():
                 'meanAccuracy': mean_accuracy,
                 'cvResults': cvResults
             })
-
-
-    def skorchOptimise(self, paramGrid : dict[list[object]] = None, cv : int =3, nbProces : int = -1):
-
-        # flat if necessary
-        if len(self.y_train.shape) > 1 and self.y_train.shape[1] == 1:
-            self.y_train = self.y_train.ravel()  # Convertir de (n_samples, 1) à (n_samples,)
-        if len(self.y_test.shape) > 1 and self.y_test.shape[1] == 1:
-            self.y_test = self.y_test.ravel()  # Faire de même pour y_test
-
-        # convert to float for skorch
-        self.X_train = self.X_train.astype(np.float32)
-        self.X_test = self.X_test.astype(np.float32)
-            
-        network = NeuralNetBinaryClassifier(
-            MLPModule,
-            module__input_dim = self.X_train.shape[1],
-            lr=0.001,
-            max_epochs=100,
-            batch_size=32,
-            iterator_train__shuffle=True,
-            optimizer=torch.optim.Adam,
-            criterion=nn.BCELoss,
-            callbacks=[EarlyStopping(patience=10)],
-            )
-
-        if paramGrid is None:
-            paramGrid = {
-                'lr': [0.001, 0.01, 0.0001],
-                'max_epochs': [50, 100],
-                'batch_size': [16, 32, 64],
-                'module__hidden_dim': [8, 16, 32, 64],
-                'module__nb_hidden_layers': [1, 2, 3, 5],
-                'module__dropout_rate': [0.1, 0.2, 0.3],
-            }
-
-        gs = GridSearchCV(
-            network, 
-            paramGrid, 
-            cv=cv, 
-            scoring='f1',
-            verbose=2,
-            n_jobs= nbProces  # nb processes
-        )
-
-        print(f"Starting the oprimisation (GridSearchCV with {cv} folds)...")
-        gs.fit(self.X_train, self.y_train)
-        
-        # display the best results
-        print("\n=== Best modele (skorch) ===")
-        print(f"Best parameters: {gs.best_params_}")
-        print(f"Best F1 score: {gs.best_score_:.4f}")
-        
-        # save the best model
-        best_model = gs.best_estimator_
-        model_path = "models/best_skorch_model.pkl"
-        preprocessor_path = "models/skorch_preprocessor.pkl"
-    
-        # create output dir if not exists
-        os.makedirs("models", exist_ok=True)
-        
-        joblib.dump(best_model, model_path)
-        joblib.dump(self.preprocessor, preprocessor_path)
-        
-
-        return self.generateBestModel(gs, best_model)
-        
-
-    def generateBestModel(self, gridSearchResults, bestModel):
-    #    Convert skorch variable name to the model ones
-        skorch_to_mlp_mapping = {
-            'lr': 'learningRate',
-            'max_epochs': 'numEpochs',
-            'batch_size': 'batchSize',
-            'module__hidden_dim': 'hiddenDim',
-            'module__nb_hidden_layers': 'nbHiddenLayers',
-            'module__dropout_rate': 'dropout'
-        }
-        # Convert bets params from GridSearch
-        best_mlp_params = {}
-        for skorch_param, value in gridSearchResults.best_params_.items():
-            if skorch_param in skorch_to_mlp_mapping:
-                mlp_param = skorch_to_mlp_mapping[skorch_param]
-                best_mlp_params[mlp_param] = value
-        
-        # update the model with the parameter
-        self.numEpochs = best_mlp_params.get('numEpochs', 100),
-        self.batchSize = best_mlp_params.get('batchSize', 32),
-        self.hiddenDim = best_mlp_params.get('hiddenDim', 16),
-        self.lr = best_mlp_params.get('learningRate', 0.001),
-        self.nbHiddenLayers = best_mlp_params.get('nbHiddenLayers', 1)
-        self.buildNetwork()
-        self.optimiser = optim.Adam(self.model.parameters(), lr = self.lr)
-
-        
-        # perform the prediction and get the results
-        _, _, y_pred = self.classicPredict()
-        best_threshold = getBestThresholdsForF1(self.y_test, y_pred)
-        y_pred_class = self.getPredictionClass(float(best_threshold))
-        test_stats = getPerformanceStatistics(self.y_test, y_pred_class)
-        
-        print("\n=== Model performance on the test data set ===")
-        print(f"F1 Score: {test_stats['f1']:.4f}")
-        print(f"Accuracy: {test_stats['accuracy']:.4f}")
-        print(f"Precision: {test_stats['precision']:.4f}")
-        print(f"Recall: {test_stats['recall']:.4f}")
-        
-        return {
-            'best_params': best_mlp_params,
-            'best_score': gridSearchResults.best_score_,
-            'grid_search_results': gridSearchResults.cv_results_,
-            'best_skorch_model': bestModel,
-            'best_mlp_model': self.model,
-            'test_performance': test_stats
-        }
